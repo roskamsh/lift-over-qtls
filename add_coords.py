@@ -33,11 +33,13 @@ def add_genome_coordinates(snp_positions_file, reference_file, original_file, da
                 df = pd.read_csv(filepath)
                 
                 if "ASB_quality" in df.columns and "ID" in df.columns:
+                    df["ASB_quality"] = df["ASB_quality"].astype(str)
                     filtered_df = df[df["ASB_quality"] == "High"]
                     if not filtered_df.empty:
                         filtered_df = filtered_df.drop(columns=["CHROM","POS"])
                         hg38_coords.columns = ["ID","CHROM","POS"]
                         updated = filtered_df.merge(hg38_coords, on = "ID")
+                        updated["CHROM"] = 'chr' + updated['CHROM'].astype(str) # to exactly match baal-nf output
                         os.makedirs(os.path.join("data","lifted","baal-nf"), exist_ok=True)
                         updated.to_csv(os.path.join("data","lifted","baal-nf",outname), index = False)
                 else:
