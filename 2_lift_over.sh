@@ -87,6 +87,99 @@ python add_coords.py data/intermediary/eQTLs_hg38_with_alleles.txt \
                      eQTLGen
 
 #########################
+# PGR eQTLs from GTEx
+#########################
+# get rsIDs & pull hg19 coordinates
+awk -F"\t" '{print $2}' data/eqtls/GTEx_eQTLs_all_NHRs.txt | sort -u > data/intermediary/gtex_eqtl_rsids.txt
+zgrep -v "^#" data/dbSNP/GCF_000001405.25.gz | awk '
+    BEGIN {
+        while ((getline < "data/intermediary/gtex_eqtl_rsids.txt") > 0) 
+            rsids[$1] = 1
+        close("data/intermediary/gtex_eqtl_rsids.txt")
+    }
+    $3 in rsids { print }
+' > data/intermediary/GTEx_matched_snps_hg19.vcf
+awk '
+BEGIN {
+    OFS = "\t"
+    print "ID", "CHR", "POS", "MAJOR", "MINOR", "REF", "ALT"
+}
+{
+    # Skip header lines
+    if ($0 ~ /^#/) next
+
+    # Extract fields from the VCF
+    chr = $1
+    pos = $2
+    id = $3
+    ref = $4
+    alts = $5
+    info = $8
+
+    # Combine REF and ALT alleles into one array
+    split(alts, alt_array, ",")
+    alleles[1] = ref
+    for (i = 1; i <= length(alt_array); i++) {
+        alleles[i + 1] = alt_array[i]
+    }
+
+    # Extract the FREQ=1000Genomes data from the INFO column
+    freq_data = ""
+    if (match(info, /FREQ=1000Genomes:([^|;]+)/, match_array)) {
+        freq_data = match_array[1] # Extract the frequencies for 1000Genomes
+        split(freq_data, freq_array, ",") # Split into an array
+    } else {
+        next # Skip this record if no 1000Genomes data is found
+    }
+
+    # Map allele frequencies
+    for (i = 1; i <= length(alleles); i++) {
+        allele_freqs[i] = freq_array[i] + 0 # Convert string to number
+    }
+
+    # Find the two alleles with the highest frequencies
+    max_freq1 = -1
+    max_freq2 = -1
+    major = ""
+    minor = ""
+
+    for (i = 1; i <= length(alleles); i++) {
+        freq = allele_freqs[i]
+
+        if (freq > max_freq1) {
+            max_freq2 = max_freq1
+            minor = major
+
+            max_freq1 = freq
+            major = alleles[i]
+        } else if (freq > max_freq2) {
+            max_freq2 = freq
+            minor = alleles[i]
+        }
+    }
+
+    # Define REF and ALT alleles
+    alt = ""
+    if (major == ref) {
+        alt = minor
+    } else if (minor == ref) {
+        alt = major
+    }
+
+    # Print the SNP data with REF and ALT alleles
+    if (major != "" && minor != "" && alt != "") {
+        print id, chr, pos, major, minor, ref, alt
+    }
+}' data/intermediary/GTEx_matched_snps_hg19.vcf > data/intermediary/GTEx_eqtls_hg19_with_alleles.txt
+
+# Lift over original files & add allele information
+python add_coords.py data/intermediary/GTEx_eqtls_hg19_with_alleles.txt \
+                     data/dbSNP/GCF_000001405.25_GRCh37.p13_assembly_report.txt \
+                     data/eqtls/GTEx_eQTLs_all_NHRs.txt \
+                     GTEx
+
+
+#########################
 ## bQTLs
 #########################
 # get rsIDs & pull hg38 coordinates
